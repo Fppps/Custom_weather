@@ -1,0 +1,1708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Radar - Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">\
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+    <style>
+        /* Custom styles to enhance modern look beyond basic Tailwind */
+        .font-press-start { font-family: 'Press Start 2P', cursive; }
+        .font-inter { font-family: 'Inter', sans-serif; }
+        
+        body {
+            /* Deeper background for a more modern feel */
+            background-color: #0d1117; 
+            color: #e2e8f0; /* Lighter text for contrast */
+        }
+
+        /* Radar Container specific styles */
+        #radarContainer {
+            background-color: #1a202c; /* Darker, slightly blueish background */
+            border-color: #2d3748; /* Softer border */
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(71, 194, 219, 0.2); /* More prominent, layered shadow */
+            cursor: grab; /* Indicate draggable */
+        }
+        #radarContainer.dragging {
+            cursor: grabbing;
+        }
+        /* Specific cursors for drawing modes */
+        #radarContainer.drawing-alert,
+        #radarContainer.drawing-arrow,
+        #radarContainer.drawing-watch { /* New class for watch drawing cursor */
+            cursor: crosshair;
+        }
+        /* New cursor for deletion mode */
+        #radarContainer.deleting-alert {
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="red" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>') 12 12, pointer;
+        }
+
+
+        #radarContainer canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 0.75rem; /* Match parent border-radius */
+        }
+
+        /* Alert animation */
+        .alert-enter {
+            opacity: 0;
+            transform: translateY(-30px); /* Slightly more pronounced entry */
+        }
+        .alert-enter-active {
+            opacity: 1;
+            transform: translateY(0);
+            transition: opacity 400ms ease-out, transform 400ms ease-out;
+        }
+        .alert-exit {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .alert-exit-active {
+            opacity: 0;
+            transform: translateY(-30px); /* Slightly more pronounced exit */
+            transition: opacity 400ms ease-in, transform 400ms ease-in;
+        }
+
+        /* Modernize Alert/Watch Banners */
+        #alertBanner, #watchBanner {
+            border-width: 2px; /* Slightly thinner border */
+            border-style: solid;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3); /* Subtle shadow for banners */
+            background: linear-gradient(145deg, var(--tw-gradient-stops)); /* Use gradients */
+            padding: 1.5rem 2rem; /* More generous padding */
+            font-size: 1.125rem; /* Slightly larger text */
+        }
+        #alertBanner {
+            --tw-gradient-stops: #b91c1c, #dc2626; /* Red gradient */
+            border-color: #f87171;
+        }
+        #watchBanner {
+            --tw-gradient-stops: #ea580c, #f97316; /* Orange gradient */
+            border-color: #fdba74;
+        }
+
+        /* Modal for Outlooks - Refined */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85); /* Darker, more opaque overlay */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100; /* Ensure it's on top */
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background-color: #1f2937; /* Darker modal background */
+            border-color: #4b5563; /* Softer border */
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6); /* Deeper shadow */
+            padding: 3rem; /* More padding */
+            border-radius: 1rem; /* More rounded corners */
+            position: relative;
+            max-width: 800px; /* Constrain modal width */
+            max-height: 90vh; /* Constrain modal height */
+            overflow-y: auto; /* Allow scrolling within modal */
+            transform: translateY(20px);
+            opacity: 0;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .modal-overlay.show .modal-content {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .modal-close-button {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            color: #e2e8f0;
+            font-size: 1.8rem; /* Larger close button */
+            border-radius: 50%; /* Circular button */
+            width: 2.5rem; /* Fixed width */
+            height: 2.5rem; /* Fixed height */
+            display: flex; /* For centering the 'x' */
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        .modal-close-button:hover {
+            background-color: rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+        }
+
+        /* Navigation bar - modern soft gradient */
+        nav {
+            background: linear-gradient(90deg, #1e293b, #2d3748, #1e293b); /* Subtle horizontal gradient */
+            padding: 1.25rem 2rem; /* More vertical padding */
+            border-radius: 0.75rem;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        nav a, nav button {
+            color: #94a3b8; /* Softer blue text */
+            font-size: 1.125rem; /* Slightly larger text for nav */
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease-in-out;
+        }
+        nav a:hover, nav button:hover {
+            color: #ffffff;
+            background-color: rgba(71, 194, 219, 0.15); /* Light blue hover effect */
+            transform: translateY(-2px); /* Slight lift on hover */
+            box-shadow: 0 2px 8px rgba(71, 194, 219, 0.1);
+        }
+        
+        /* Control Buttons */
+        .mt-6 button {
+            background: linear-gradient(145deg, #06b6d4, #0891b2); /* Cyan gradient */
+            border: none;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2); /* More subtle shadow */
+            transition: all 0.2s ease-in-out;
+            padding: 0.875rem 1.75rem; /* Slightly larger padding */
+        }
+        .mt-6 button:hover {
+            background: linear-gradient(145deg, #0891b2, #06b6d4); /* Invert gradient on hover */
+            transform: translateY(-2px) scale(1.02); /* More pronounced hover effect */
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+        .mt-6 button:active {
+            transform: translateY(0.5px) scale(0.98); /* Click effect */
+            box-shadow: 0 2px 5px (0, 0, 0, 0.2); 
+        }
+
+        /* Information overlays on radar */
+        .absolute.bottom-3.left-3, .absolute.top-3.right-3 {
+            background-color: rgba(26, 32, 44, 0.75); /* Match radar container, slightly opaque */
+            backdrop-filter: blur(5px); /* Subtle blur for modern glass effect */
+            border: 1px solid rgba(71, 194, 219, 0.1); /* Thin accent border */
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        .legend-item span {
+            color: #cbd5e1; /* Lighter text for legend values */
+        }
+        
+        /* Loading Spinner */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Alert type selection modal */
+        #alertTypeSelectionModal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #1a202c;
+            border: 1px solid #2d3748;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+            z-index: 60;
+            display: none; /* Hidden by default */
+        }
+        #alertTypeSelectionModal.show {
+            display: block;
+        }
+        #alertTypeSelectionModal button {
+            width: 100%;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            border-radius: 0.5rem;
+            background-color: #34495e;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            transition: background-color 0.2s ease;
+        }
+        #alertTypeSelectionModal button:hover {
+            background-color: #4a657c;
+        }
+        #alertTypeSelectionModal button:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body class="font-inter bg-slate-900 text-slate-200 flex flex-col items-center min-h-screen m-0 p-4">
+
+    <nav class="w-full bg-slate-800 p-4 rounded-lg shadow-xl mb-6 flex justify-center z-20">
+        <div class="flex space-x-6">
+            <a href="#" class="font-press-start text-lg text-cyan-300 hover:text-cyan-200 transition-colors duration-200">Home</a>
+            <button id="outlooksButton" class="font-press-start text-lg text-cyan-300 hover:text-cyan-200 transition-colors duration-200 bg-transparent border-none cursor-pointer">Info & Training</button>
+        </div>
+    </nav>
+
+    <!-- Disclaimer Added Here -->
+    <div class="w-full max-w-2xl bg-amber-600 border-2 border-amber-400 text-white p-3 rounded-md text-center text-sm font-bold mb-4 shadow-md">
+        Disclaimer: This radar is for training and entertainment purposes only and should NOT be used for real-world weather decisions.
+    </div>
+
+    <div id="alertBanner" class="fixed top-24 left-1/2 -translate-x-1/2 w-11/12 max-w-2xl bg-red-800 border-4 border-red-500 text-white p-4 rounded-lg shadow-2xl z-50 hidden">
+        <h2 id="alertTitle" class="text-2xl font-bold text-center"></h2>
+        <p id="alertMessage" class="mt-2 text-center"></p>
+    </div>
+
+    <div id="watchBanner" class="fixed top-44 left-1/2 -translate-x-1/2 w-11/12 max-w-2xl bg-orange-800 border-4 border-orange-500 text-white p-4 rounded-lg shadow-2xl z-50 hidden">
+        <h2 id="watchTitle" class="text-2xl font-bold text-center"></h2>
+        <p id="watchMessage" class="mt-2 text-center"></p>
+    </div>
+
+    <h1 class="font-press-start text-2xl text-cyan-300 mb-6 [text-shadow:0_0_10px_#22d3ee]">Local Weather Radar</h1>
+
+    <div id="radarContainer" class="w-[98vw] max-w-[1400px] aspect-square bg-[#0c1e25] rounded-lg relative overflow-hidden shadow-2xl shadow-cyan-500/10 border-4 border-slate-700">
+        <canvas id="mapCanvas" class="block rounded-lg"></canvas>
+        <canvas id="weatherRadar" class="block rounded-lg"></canvas>
+        
+        <div class="absolute bottom-3 left-3 bg-black/60 text-slate-400 p-2 rounded-md text-xs z-10">
+            <span>Status: High-Res Scan</span><br>
+            <span>Time: <span id="currentTime"></span></span>
+        </div>
+        <div id="legendContainer" class="absolute top-3 right-3 bg-black/60 text-slate-200 p-3 rounded-md text-sm z-10 flex flex-col items-center">
+             <div class="font-bold mb-2 text-cyan-300">Reflectivity (dBZ)</div>
+        </div>
+
+        <div id="loadingOverlay" class="absolute inset-0 bg-black/70 flex justify-center items-center z-40 hidden">
+            <div class="spinner"></div>
+            <span class="ml-4 text-xl text-white font-press-start">Scanning...</span>
+        </div>
+
+        <!-- Alert Type Selection Modal -->
+        <div id="alertTypeSelectionModal" class="p-4 rounded-lg flex flex-col items-center">
+            <h3 class="text-xl font-bold mb-4 text-cyan-300">Select Alert Type</h3>
+            <button id="severeTstormAlertButton" class="w-full mb-3 py-2 px-4 rounded-lg bg-yellow-600 text-white hover:bg-yellow-500 transition-colors">Draw Severe T-Storm Alert</button>
+            <button id="tornadoAlertButton" class="w-full py-2 px-4 rounded-lg bg-red-600 text-white hover:bg-red-500 transition-colors">Draw Tornado Alert</button>
+        </div>
+    </div>
+
+    <div class="mt-6 flex flex-wrap gap-4 justify-center z-10"> <!-- Added flex-wrap and justify-center -->
+        <button id="refreshScan" class="font-press-start bg-cyan-700 text-white py-3 px-6 rounded-lg text-sm cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:bg-cyan-600 active:translate-y-0.5 active:shadow-sm">New Scan</button>
+        <button id="toggleAnimation" class="font-press-start bg-cyan-700 text-white py-3 px-6 rounded-lg text-sm cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:bg-cyan-600 active:translate-y-0.5 active:shadow-sm">Pause</button>
+        <button id="togglePressureMap" class="font-press-start bg-cyan-700 text-white py-3 px-6 rounded-lg text-sm cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:bg-cyan-600 active:translate-y-0.5 active:shadow-sm">Pressure Map</button>
+        <button id="drawAlertButton" class="font-press-start bg-yellow-500 text-slate-900 py-3 px-6 rounded-lg text-sm cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:bg-yellow-400 active:translate-y-0.5 active:shadow-sm">Draw Alert Area</button>
+        <button id="drawWatchButton" class="font-press-start bg-orange-500 text-slate-900 py-3 px-6 rounded-lg text-sm cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:bg-orange-400 active:translate-y-0.5 active:shadow-sm">Draw Watch Area</button> <!-- New button for watches -->
+        <button id="drawArrowButton" class="font-press-start bg-blue-500 text-white py-3 px-6 rounded-lg text-sm cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:bg-blue-400 active:translate-y-0.5 active:shadow-sm">Draw Custom Arrow</button>
+        <button id="deleteAlertButton" class="font-press-start bg-red-500 text-white py-3 px-6 rounded-lg text-sm cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:bg-red-400 active:translate-y-0.5 active:shadow-sm">Delete Alert</button>
+        <button id="doneDrawingButton" class="font-press-start bg-green-500 text-white py-3 px-6 rounded-lg text-sm cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:bg-green-400 active:translate-y-0.5 active:shadow-sm hidden">Finish Drawing</button>
+    </div>
+
+    <!-- Outlooks/Info Modal -->
+    <div id="outlooksModal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close-button" id="closeOutlooksModal">&times;</button>
+            <h2 class="text-3xl font-bold text-center text-cyan-300 mb-6">Information & Training</h2>
+
+            <section class="mb-8">
+                <h3 class="text-2xl font-semibold text-white mb-4">Understanding Storm Strength (dBZ)</h3>
+                <p class="text-slate-300 mb-4">
+                    Weather radar displays reflectivity in decibels (dBZ), which indicates the intensity of precipitation or other objects in the air. Higher dBZ values generally mean stronger storms. Here's a quick guide:
+                </p>
+                <ul class="list-disc list-inside text-slate-300 ml-4 space-y-2">
+                    <li><span class="font-bold text-black" style="background-color: #000000;">&nbsp;&nbsp;</span> <strong>-5 to 0 dBZ (Black to Dark Maroon):</strong> Very light rain or atmospheric particles.</li>
+                    <li><span class="font-bold text-red-500" style="background-color: #800000;">&nbsp;&nbsp;</span> <strong>10 to 20 dBZ (Dark Maroon to Red):</strong> Light rain.</li>
+                    <li><span class="font-bold text-orange-400" style="background-color: #FF4500;">&nbsp;&nbsp;</span> <strong>30 to 40 dBZ (Orange-Red to Orange):</strong> Moderate to heavy rain. At 40 dBZ, you might start seeing some stronger showers.</li>
+                    <li><span class="font-bold text-green-400" style="background-color: #008000;">&nbsp;&nbsp;</span> <strong>50 dBZ (Green):</strong> Very heavy rainfall. This is often the threshold for a severe thunderstorm, capable of producing strong winds or small hail.</li>
+                    <li><span class="font-bold text-blue-400" style="background-color: #0000FF;">&nbsp;&nbsp;</span> <strong>60 to 70 dBZ (Light Blue to Blue):</strong> Indicates very intense precipitation, likely large hail or extremely heavy rain. Cells with these values should be monitored closely.</li>
+                    <li><span class="font-bold text-blue-800" style="background-color: #00008B;">&nbsp;&nbsp;</span> <strong>80 dBZ (Dark Blue):</strong> Extremely dangerous. This level of reflectivity suggests very large hail, and in supercell storms, it can be indicative of a tornado.</li>
+                    <li><span class="font-bold text-purple-800" style="background-color: #4B0082;">&nbsp;&nbsp;</span> <strong>90 dBZ and above (Indigo/Purple to Dark Maroon):</strong> Highest reflectivity. This level indicates exceptionally dangerous storms with potentially devastating hail or a strong, confirmed tornado.</li>
+                </ul>
+                <p class="text-slate-300 mt-4">
+                    Remember, dBZ is just one factor. Always consider other data like storm structure, rotation, and ground reports.
+                </p>
+            </section>
+
+            <section>
+                <h3 class="text-2xl font-semibold text-white mb-4">Tornado Watch vs. Tornado Warning</h3>
+                <p class="text-slate-300 mb-4">
+                    Understanding the difference between a "watch" and a "warning" is crucial for your safety.
+                </p>
+                <div class="mb-4 p-4 bg-orange-900/40 border border-orange-700 rounded-lg">
+                    <h4 class="text-xl font-bold text-orange-300 mb-2">Tornado Watch</h4>
+                    <p class="text-slate-300">
+                        A **Tornado Watch** means conditions are favorable for tornadoes to develop in or near the watch area.
+                        <ul>
+                            <li><strong>Meaning:</strong> "Be Prepared!"</li>
+                            <li><strong>Action:</strong> Monitor local weather. Have a plan ready. Know where to go for shelter.</li>
+                            <li><strong>On Radar:</strong> Represented by an <span class="text-orange-400 font-bold">orange polygon with a dashed outline</span>. This indicates an area where storms could intensify.</li>
+                        </ul>
+                    </p>
+                </div>
+                <div class="p-4 bg-red-900/40 border border-red-700 rounded-lg">
+                    <h4 class="text-xl font-bold text-red-300 mb-2">Tornado Warning</h4>
+                    <p class="text-slate-300">
+                        A **Tornado Warning** means a tornado has been sighted or indicated by weather radar, posing an imminent threat to life and property.
+                        <ul>
+                            <li><strong>Meaning:</strong> "Take Action Now!"</li>
+                            <li><strong>Action:</strong> Seek immediate shelter in an interior room on the lowest floor, or a basement/storm cellar.</li>
+                            <li><strong>On Radar:</strong> Represented by a <span class="text-red-500 font-bold">solid red polygon</span> (often with a black outline/dash). This signifies an active, dangerous tornado.</li>
+                        </ul>
+                    </p>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        // These are intentionally global as they are fundamental canvas elements
+        // and their contexts, which are needed throughout the script.
+        const weatherCanvas = document.getElementById('weatherRadar');
+        const weatherCtx = weatherCanvas.getContext('2d');
+        const mapCanvas = document.getElementById('mapCanvas');
+        const mapCtx = mapCanvas.getContext('2d');
+        const radarContainer = document.getElementById('radarContainer');
+
+        let radarWidth, radarHeight, cellSize;
+        let animationPaused = false;
+        let time = 0; 
+        let showPressureOverlay = false; 
+
+        const GRID_RESOLUTION = 120;
+        let radarGrid = [];
+
+        // --- UPDATED DBZ_SCALE for new color scheme ---
+        const DBZ_SCALE = [
+            { dbz: -5, color: '#000000' },     // Black (lowest reflectivity, no return)
+            { dbz: 0, color: '#330000' },      // Very Dark Red/Brown
+            { dbz: 10, color: '#800000' },     // Dark Maroon
+            { dbz: 20, color: '#FF0000' },     // Red
+            { dbz: 30, color: '#FF4500' },     // Orange-Red
+            { dbz: 40, color: '#FFA500' },     // Orange
+            { dbz: 50, color: '#008000' },     // Green (transitioning to blue tones)
+            { dbz: 60, color: '#ADD8E6' },     // Light Blue
+            { dbz: 70, color: '#0000FF' },     // Blue
+            { dbz: 80, color: '#00008B' },     // Dark Blue
+            { dbz: 90, color: '#4B0082' },     // Indigo/Purple
+            { dbz: 100, color: '#800000' }     // Dark Maroon (highest reflectivity)
+        ];
+
+        // --- New Alert/Watch Type Definitions for Realism ---
+        const ALERT_TYPES = {
+            SEVERE_THUNDERSTORM_WIND_WARNING: {
+                title: "SEVERE THUNDERSTORM WARNING (WIND)",
+                message: "A dangerous storm with damaging winds is active. Seek shelter now!",
+                fillColor: 'rgba(255, 255, 0, ',
+                borderColor: 'rgba(255, 255, 0, ',
+                lineWidth: 4,
+                lineDash: [],
+                soundNote: "G3",
+                minDbzTrigger: 60, // Higher dBZ for wind
+                minPressureFactor: 0.1 // Strong low pressure for wind
+            },
+            SEVERE_THUNDERSTORM_HAIL_WARNING: {
+                title: "SEVERE THUNDERSTORM WARNING (HAIL)",
+                message: "Large hail is expected or occurring. Protect property and seek cover!",
+                fillColor: 'rgba(173, 216, 230, ', // Light blue for hail
+                borderColor: 'rgba(0, 0, 255, ',
+                lineWidth: 4,
+                lineDash: [4, 4],
+                soundNote: "A3",
+                minDbzTrigger: 55, // Slightly lower dBZ for hail
+                minPressureFactor: -0.1 // Less pressure dependency
+            },
+            TORNADO_WARNING_RADAR_INDICATED: {
+                title: "TORNADO WARNING (RADAR INDICATED)",
+                message: "Tornado indicated by radar. Seek immediate shelter in an interior room!",
+                fillColor: 'rgba(255, 0, 0, ',
+                borderColor: 'rgba(0, 0, 0, ',
+                lineWidth: 5,
+                lineDash: [8, 4],
+                soundNote: "C4",
+                minDbzTrigger: 65, // High dBZ, requires hook echo
+                minPressureFactor: 0.2 // Strong low pressure
+            },
+            TORNADO_WARNING_CONFIRMED: {
+                title: "TORNADO WARNING (CONFIRMED)",
+                message: "CONFIRMED TORNADO: Seek immediate underground shelter!",
+                fillColor: 'rgba(139, 0, 0, ', // Darker red for confirmed
+                borderColor: 'rgba(0, 0, 0, ',
+                lineWidth: 6,
+                lineDash: [10, 2],
+                soundNote: "D4",
+                minDbzTrigger: 75, // Very high dBZ, requires hook echo
+                minPressureFactor: 0.3 // Very strong low pressure
+            }
+        };
+
+        const WATCH_TYPES = {
+            SEVERE_THUNDERSTORM_WATCH: {
+                title: "SEVERE THUNDERSTORM WATCH",
+                message: "Conditions favorable for severe thunderstorms. Monitor updates.",
+                fillColor: 'rgba(255, 165, 0, ',
+                borderColor: 'rgba(255, 165, 0, ',
+                lineWidth: 3,
+                lineDash: [3, 3],
+                soundNote: "E4",
+                minDbzTrigger: 45,
+                maxDbzTrigger: 60, // Don't trigger if already warning-level
+                minPressureFactor: -0.2 // Favorable pressure
+            },
+        };
+
+        let weatherSystems = [];
+        let activeWarnings = [];
+        let activeWatches = []; 
+
+        let userAlerts = [];
+        let userWatches = []; 
+        let userArrows = [];
+        let drawingMode = 'none'; 
+        let currentDrawingPoints = [];
+        let tempMousePos = { x: 0, y: 0 };
+        let selectedUserAlertType = ''; // For drawing user alerts (severe, tornado)
+
+        let pressureAnimationTime = 0; 
+
+        let synth = new Tone.PolySynth(Tone.Synth).toDestination();
+
+        const PERLIN_SIZE = 256;
+        const P = new Array(PERLIN_SIZE * 2);
+        const GRADIENTS = new Array(PERLIN_SIZE * 2);
+
+        let isDragging = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+        let mapOffsetX = 0;
+        let mapOffsetY = 0;
+        let zoomLevel = 1.0;
+        const ZOOM_FACTOR = 1.1;
+        const MIN_ZOOM = 1.0;
+        const MAX_ZOOM = 5.0;
+        const PAN_LIMIT_FACTOR = 0.2;
+
+        let mapBackgroundNoiseOffset = 0;
+
+        function initPerlin() {
+            for (let i = 0; i < PERLIN_SIZE; i++) {
+                P[i] = i;
+                const angle = Math.random() * 2 * Math.PI;
+                GRADIENTS[i] = { x: Math.cos(angle), y: Math.sin(angle) };
+            }
+            for (let i = 0; i < PERLIN_SIZE; i++) {
+                const r = Math.floor(Math.random() * PERLIN_SIZE);
+                [P[i], P[r]] = [P[r], P[i]];
+            }
+            for (let i = 0; i < PERLIN_SIZE; i++) {
+                P[i + PERLIN_SIZE] = P[i];
+                GRADIENTS[i + PERLIN_SIZE] = GRADIENTS[i];
+            }
+        }
+
+        function lerp(a, b, t) {
+            return a + t * (b - a);
+        }
+
+        function fade(t) {
+            return t * t * t * (t * (t * 6 - 15) + 10);
+        }
+
+        function dot(grad, x, y) {
+            return grad.x * x + grad.y * y;
+        }
+
+        function perlinNoise(x, y) {
+            const X = Math.floor(x) & (PERLIN_SIZE - 1);
+            const Y = Math.floor(y) & (PERLIN_SIZE - 1);
+
+            x -= Math.floor(x);
+            y -= Math.floor(y);
+
+            const u = fade(x);
+            const v = fade(y);
+
+            const A = P[X] + Y;
+            const B = P[X + 1] + Y;
+
+            const g00 = GRADIENTS[P[A]];
+            const g10 = GRADIENTS[P[B]];
+            const g01 = GRADIENTS[P[A + 1]];
+            const g11 = GRADIENTS[P[B + 1]];
+
+            return lerp(
+                lerp(dot(g00, x, y), dot(g10, x - 1, y), u),
+                lerp(dot(g01, x, y - 1), dot(g11, x - 1, y - 1), u),
+                v
+            );
+        }
+
+        function octavePerlin(x, y, octaves, persistence) {
+            let total = 0;
+            let frequency = 1;
+            let amplitude = 1;
+            let maxValue = 0;
+            for (let i = 0; i < octaves; i++) {
+                total += perlinNoise(x * frequency, y * frequency) * amplitude;
+
+                maxValue += amplitude;
+                amplitude *= persistence;
+                frequency *= 2;
+            }
+            return total / maxValue;
+        }
+
+        function getColorForPressure(pressureValue) {
+            const t = (pressureValue + 1) / 2;
+            const hue = lerp(10, 220, t);
+            const saturation = 100;
+            const lightness = 45; 
+            const fixedAlpha = 0.3; 
+            return `hsla(${hue}, ${saturation}%, ${lightness}%, ${fixedAlpha})`; 
+        }
+
+        function getGlobalPressureValue(radarGridX, radarGridY) {
+            const globalScale = 0.05;
+            const globalOctaves = 4;
+            const globalPersistence = 0.5;
+            
+            const noiseX = radarGridX * globalScale + pressureAnimationTime * 0.1; 
+            const noiseY = radarGridY * globalScale + pressureAnimationTime * 0.05; 
+            let finalPressure = (octavePerlin(noiseX, noiseY, globalOctaves, globalPersistence) * 2) - 1;
+
+            return Math.max(-1, Math.min(1, finalPressure));
+        }
+
+        function resizeCanvas() {
+            radarWidth = radarContainer.offsetWidth;
+            radarHeight = radarContainer.offsetHeight;
+            [weatherCanvas, mapCanvas].forEach(c => { c.width = radarWidth; c.height = radarHeight; });
+            cellSize = Math.min(radarWidth, radarHeight) / GRID_RESOLUTION;
+            
+            drawBaseMapAndDynamicBackground(); 
+            initWeatherSystems();     
+        }
+
+        function drawStaticMapElementsOntoContext(ctx) {
+            ctx.strokeStyle = 'rgba(100, 150, 150, 0.1)';
+            ctx.lineWidth = 1 / zoomLevel;
+            for(let i = 1; i < 10; i++) {
+                ctx.beginPath();
+                ctx.moveTo(0, i * radarHeight / 10); ctx.lineTo(radarWidth, i * radarHeight / 10);
+                ctx.moveTo(i * radarWidth / 10, 0); ctx.lineTo(i * radarWidth / 10, radarHeight);
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = 'rgba(100, 150, 150, 0.4)';
+            ctx.lineWidth = 2.5 / zoomLevel;
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                const startX = Math.random() > 0.5 ? Math.random() * -0.2 * radarWidth : radarWidth * (1 + Math.random() * 0.2);
+                const startY = Math.random() * radarHeight;
+                ctx.moveTo(startX, startY);
+                const control1X = Math.random() * radarWidth; const control1Y = Math.random() * radarHeight;
+                const control2X = Math.random() * radarWidth; const control2Y = Math.random() * radarHeight;
+                const endX = Math.random() * radarWidth;
+                const endY = Math.random() > 0.5 ? Math.random() * -0.2 * radarHeight : radarHeight * (1 + Math.random() * 0.2);
+                ctx.bezierCurveTo(control1X, control1Y, control2X, control2Y, endX, endY);
+                ctx.stroke();
+            }
+        }
+
+        function drawDynamicBackgroundNoise(ctx) {
+            mapBackgroundNoiseOffset += 0.0005;
+            const bgScale = 0.02;
+            const bgAlpha = 0.05;
+
+            ctx.globalAlpha = bgAlpha;
+            for (let r = 0; r < radarHeight; r++) {
+                for (let c = 0; c < radarWidth; c++) {
+                    const noiseVal = octavePerlin(c * bgScale + mapBackgroundNoiseOffset, r * bgScale + mapBackgroundNoiseOffset, 3, 0.5);
+                    const grayValue = Math.floor(lerp(10, 30, noiseVal));
+                    ctx.fillStyle = `rgb(${grayValue}, ${grayValue}, ${grayValue})`;
+                    ctx.fillRect(c, r, 1, 1);
+                }
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        function drawBaseMapAndDynamicBackground() {
+            mapCtx.clearRect(0, 0, radarWidth, radarHeight);
+            mapCtx.save();
+            mapCtx.translate(mapOffsetX, mapOffsetY);
+            mapCtx.scale(zoomLevel, zoomLevel);
+            drawStaticMapElementsOntoContext(mapCtx);
+            drawDynamicBackgroundNoise(mapCtx);
+            mapCtx.restore();
+        }
+
+
+        function initRadarGrid() {
+            radarGrid = Array(GRID_RESOLUTION).fill(null).map(() => Array(GRID_RESOLUTION).fill(0));
+        }
+
+        function getNoise(x, y, t, system) {
+            const { freq1, freq2, freq3, freq4, seed, driftX, driftY } = system.noiseParams;
+            const x_ = x + t * driftX; 
+            const y_ = y + t * driftY;
+
+            const val1 = Math.sin(x_ * freq1 + seed) * Math.cos(y_ * freq1 + seed);
+            const val2 = Math.sin(x_ * freq2 - seed) * Math.cos(y_ * freq2 - seed);
+            const val3 = Math.sin(x_ * freq3 + seed * 2) * Math.cos(y_ * freq3 + seed * 2);
+            const val4 = Math.sin(x_ * freq4) * Math.cos(y_ * freq4);
+            return (val1 + val2 * 0.6 + val3 * 0.3 + val4 * 0.15) / 2.05;
+        }
+        
+        function initWeatherSystems() {
+            weatherSystems = [];
+            activeWarnings = []; 
+            activeWatches = []; 
+            
+            const numSystems = Math.floor(Math.random() * 5) + 4;
+
+            for (let i = 0; i < numSystems; i++) {
+                const isSupercell = Math.random() < 0.25; 
+                weatherSystems.push({
+                    id: `sys_${Date.now()}_${i}`,
+                    type: isSupercell ? 'supercell' : 'rain_band',
+                    maxDbz: isSupercell ? (Math.random() * 20 + 65) : (Math.random() * 30 + 35), 
+                    currentMaxDbz: isSupercell ? (Math.random() * 20 + 65) : (Math.random() * 30 + 35), 
+                    noiseParams: {
+                        freq1: (Math.random() * 0.1 + (isSupercell ? 0.1 : 0.05)) / (GRID_RESOLUTION/60),
+                        freq2: (Math.random() * 0.2 + (isSupercell ? 0.2 : 0.1)) / (GRID_RESOLUTION/60),
+                        freq3: (Math.random() * 0.4 + 0.2) / (GRID_RESOLUTION/60),
+                        freq4: (Math.random() * 0.8 + 0.4) / (GRID_RESOLUTION/60),
+                        seed: Math.random() * 1000,
+                        driftX: (Math.random() - 0.5) * (isSupercell ? 0.5 : 0.25),
+                        driftY: (Math.random() - 0.5) * (isSupercell ? 0.5 : 0.25),
+                    },
+                    warningPolygon: null,
+                    watchPolygon: null,
+                    hasHookEcho: false
+                });
+            }
+            populateRadarGrid();
+        }
+        
+        function populateRadarGrid() {
+            initRadarGrid();
+
+            const now = Date.now();
+            
+            // Filter out expired warnings/watches based on time AND storm intensity
+            activeWarnings = activeWarnings.filter(w => {
+                const system = weatherSystems.find(s => s.id === w.id);
+                // Also remove if the storm no longer meets a minimum intensity threshold
+                // For warnings, if dBZ drops below 45, it should probably expire
+                return now < w.endTime && system && system.currentMaxDbz >= 45;
+            });
+            activeWatches = activeWatches.filter(w => {
+                const system = weatherSystems.find(s => s.id === w.id);
+                // For watches, if dBZ drops below 30, it should probably expire
+                return now < w.endTime && system && system.currentMaxDbz >= 30;
+            });
+
+
+            weatherSystems.forEach(system => {
+                const systemCenterXGrid = GRID_RESOLUTION / 2 + system.noiseParams.driftX * time * 0.8;
+                const systemCenterYGrid = GRID_RESOLUTION / 2 + system.noiseParams.driftY * time * 0.8;
+                
+                let maxDbzFoundInSystem = 0;
+                let foundSignificantDbz = false;
+
+                let minStormGridX = GRID_RESOLUTION;
+                let maxStormGridX = 0;
+                let minStormGridY = GRID_RESOLUTION;
+                let maxStormGridY = 0;
+
+                let systemPressureSum = 0;
+                let systemPressureCount = 0;
+
+                // Calculate the average pressure within the general storm area
+                for (let r = 0; r < GRID_RESOLUTION; r++) {
+                    for (let c = 0; c < GRID_RESOLUTION; c++) {
+                        const distFromCenter = Math.sqrt((c - systemCenterXGrid)**2 + (r - systemCenterYGrid)**2);
+                        const falloffDist = system.type === 'supercell' ? GRID_RESOLUTION * 0.2 : GRID_RESOLUTION * 0.7;
+                        const falloff = Math.max(0, 1 - (distFromCenter / falloffDist)**2); 
+
+                        const noiseVal = (getNoise(c, r, time, system) + 1) / 2;
+                        // Only consider cells with some radar return for pressure average
+                        if (noiseVal > 0.6 && falloff > 0.1) { 
+                            systemPressureSum += getGlobalPressureValue(c, r);
+                            systemPressureCount++;
+                        }
+                    }
+                }
+
+                const avgPressureForSystem = systemPressureCount > 0 ? systemPressureSum / systemPressureCount : 0;
+
+                // Adjust currentMaxDbz based on pressure
+                let dbzAdjustment = 0;
+                if (avgPressureForSystem < -0.2) { // Very low pressure, strong intensification
+                    dbzAdjustment = 0.8;
+                } else if (avgPressureForSystem < 0) { // Low pressure, slight intensification
+                    dbzAdjustment = 0.2;
+                } else if (avgPressureForSystem > 0.2) { // Very high pressure, strong dissipation
+                    dbzAdjustment = -0.8;
+                } else if (avgPressureForSystem > 0) { // Slight high pressure, slight dissipation
+                    dbzAdjustment = -0.2;
+                }
+
+                // Apply adjustment, supercells respond more dynamically
+                system.currentMaxDbz += dbzAdjustment * (system.type === 'supercell' ? 0.8 : 0.3);
+
+                // Clamp currentMaxDbz within reasonable bounds
+                // Max can be slightly above its initial maxDbz for stronger growth phases
+                system.currentMaxDbz = Math.max(5, Math.min(system.maxDbz * 1.5, system.currentMaxDbz)); 
+
+
+                for (let r = 0; r < GRID_RESOLUTION; r++) {
+                    for (let c = 0; c < GRID_RESOLUTION; c++) {
+                        const noiseVal = (getNoise(c, r, time, system) + 1) / 2;
+                        const falloffDist = system.type === 'supercell' ? GRID_RESOLUTION * 0.2 : GRID_RESOLUTION * 0.7;
+                        const distFromCenter = Math.sqrt((c - systemCenterXGrid)**2 + (r - systemCenterYGrid)**2);
+                        const falloff = Math.max(0, 1 - (distFromCenter / falloffDist)**2); 
+                        
+                        if (noiseVal > 0.6) {
+                            // Use currentMaxDbz for the actual dBZ calculation
+                            let dbz = (noiseVal - 0.6) / 0.4 * system.currentMaxDbz * falloff;
+                            
+                            // Original pressure influence factor, still applied per cell
+                            const pressureAtCell = getGlobalPressureValue(c, r);
+                            const pressureInfluenceFactor = 1 - (pressureAtCell * 0.5); 
+                            dbz *= pressureInfluenceFactor;
+                            
+                            dbz = Math.max(0, dbz);
+
+                            if (dbz > 0) {
+                                radarGrid[r][c] = Math.max(radarGrid[r][c] || 0, dbz);
+                            }
+
+                            if (dbz >= 40) {
+                                foundSignificantDbz = true;
+                                maxDbzFoundInSystem = Math.max(maxDbzFoundInSystem, dbz);
+                                minStormGridX = Math.min(minStormGridX, c);
+                                maxStormGridX = Math.max(maxStormGridX, c);
+                                minStormGridY = Math.min(minStormGridY, r);
+                                maxStormGridY = Math.max(maxStormGridY, r);
+                            }
+                        }
+                    }
+                }
+
+                const isExtentValid = minStormGridX <= maxStormGridX && minStormGridY <= maxStormGridY;
+
+                // --- Realistic Alert/Watch Triggering Logic ---
+                if (system.type === 'supercell' && foundSignificantDbz && isExtentValid) {
+                    let triggeredWarningType = null;
+
+                    // Attempt to trigger a Tornado Warning (Confirmed) first
+                    if (system.hasHookEcho && system.currentMaxDbz >= ALERT_TYPES.TORNADO_WARNING_CONFIRMED.minDbzTrigger && avgPressureForSystem <= -ALERT_TYPES.TORNADO_WARNING_CONFIRMED.minPressureFactor && Math.random() < 0.1) { // Small random chance for "confirmation"
+                        triggeredWarningType = ALERT_TYPES.TORNADO_WARNING_CONFIRMED;
+                    } 
+                    // Then a Tornado Warning (Radar Indicated)
+                    else if (system.hasHookEcho && system.currentMaxDbz >= ALERT_TYPES.TORNADO_WARNING_RADAR_INDICATED.minDbzTrigger && avgPressureForSystem <= -ALERT_TYPES.TORNADO_WARNING_RADAR_INDICATED.minPressureFactor) {
+                        triggeredWarningType = ALERT_TYPES.TORNADO_WARNING_RADAR_INDICATED;
+                    } 
+                    // Then Severe Thunderstorm Warnings
+                    else if (system.currentMaxDbz >= ALERT_TYPES.SEVERE_THUNDERSTORM_WIND_WARNING.minDbzTrigger && avgPressureForSystem <= -ALERT_TYPES.SEVERE_THUNDERSTORM_WIND_WARNING.minPressureFactor) {
+                        triggeredWarningType = ALERT_TYPES.SEVERE_THUNDERSTORM_WIND_WARNING;
+                    } else if (system.currentMaxDbz >= ALERT_TYPES.SEVERE_THUNDERSTORM_HAIL_WARNING.minDbzTrigger) { // Hail warning has less pressure dependency
+                        triggeredWarningType = ALERT_TYPES.SEVERE_THUNDERSTORM_HAIL_WARNING;
+                    }
+
+                    if (triggeredWarningType && !activeWarnings.find(w => w.id === system.id)) {
+                        const baseWarningDuration = 15; // Shorter base duration
+                        const dbzFactor = (system.currentMaxDbz - triggeredWarningType.minDbzTrigger) / 20;
+                        const pressureFactor = Math.max(0, (0 - avgPressureForSystem)); 
+                        const duration = baseWarningDuration + (dbzFactor * 10) + (pressureFactor * 5); 
+                        
+                        const stormExtent = {
+                            minX: minStormGridX,
+                            maxX: maxStormGridX,
+                            minY: minStormGridY,
+                            maxY: maxStormGridY
+                        };
+                        triggerAlert(system, duration, avgPressureForSystem, stormExtent, triggeredWarningType); 
+                    }
+                } 
+                
+                // Trigger Watch if conditions are favorable but not warning-level, and no warning is active
+                if (system.type === 'supercell' && foundSignificantDbz && isExtentValid && 
+                    system.currentMaxDbz >= WATCH_TYPES.SEVERE_THUNDERSTORM_WATCH.minDbzTrigger && 
+                    system.currentMaxDbz < WATCH_TYPES.SEVERE_THUNDERSTORM_WATCH.maxDbzTrigger &&
+                    avgPressureForSystem <= -WATCH_TYPES.SEVERE_THUNDERSTORM_WATCH.minPressureFactor) {
+                    
+                    if (!activeWatches.find(w => w.id === system.id) && !activeWarnings.find(w => w.id === system.id)) {
+                        const baseWatchDuration = 60; 
+                        const dbzFactor = (system.currentMaxDbz - WATCH_TYPES.SEVERE_THUNDERSTORM_WATCH.minDbzTrigger) / 15; 
+                        const pressureFactor = Math.max(0, (0 - avgPressureForSystem)); 
+                        const duration = baseWatchDuration + (dbzFactor * 30) + (pressureFactor * 15); 
+
+                        const stormExtent = {
+                            minX: minStormGridX,
+                            maxX: maxStormGridX,
+                            minY: minStormGridY,
+                            maxY: maxStormGridY
+                        };
+                        triggerWatch(system, duration, avgPressureForSystem, stormExtent, WATCH_TYPES.SEVERE_THUNDERSTORM_WATCH); 
+                    }
+                }
+            });
+        }
+        
+        function triggerAlert(system, calculatedDuration, avgPressureForShaping, stormExtent, alertConfig) {
+            if (Tone.context.state !== 'running') {
+                Tone.start(); 
+            }
+
+            synth.triggerAttackRelease(alertConfig.soundNote, "8n");
+
+            const points = [];
+            points.push({ x: stormExtent.minX * cellSize, y: stormExtent.minY * cellSize });
+            points.push({ x: (stormExtent.maxX + 1) * cellSize, y: stormExtent.minY * cellSize });
+            points.push({ x: (stormExtent.maxX + 1) * cellSize, y: (stormExtent.maxY + 1) * cellSize });
+            points.push({ x: stormExtent.minX * cellSize, y: (stormExtent.maxY + 1) * cellSize });
+            
+            const jitterScale = 0.5 * (1 - avgPressureForShaping);
+            for (let i = 0; i < points.length; i++) {
+                points[i].x += (Math.random() - 0.5) * cellSize * jitterScale;
+                points[i].y += (Math.random() - 0.5) * cellSize * jitterScale;
+            }
+
+            activeWarnings.push({ 
+                id: system.id, 
+                polygon: points, 
+                endTime: Date.now() + calculatedDuration * 1000, 
+                type: 'warning', 
+                animationPhase: 0, 
+                duration: calculatedDuration, 
+                extent: stormExtent,
+                fillColor: alertConfig.fillColor, 
+                borderColor: alertConfig.borderColor, 
+                lineWidth: alertConfig.lineWidth, 
+                lineDash: alertConfig.lineDash,
+                warningType: alertConfig.title // Store the full title
+            }); 
+
+            alertTitle.textContent = alertConfig.title;
+            alertMessage.textContent = alertConfig.message;
+            alertBanner.classList.remove('hidden');
+            alertBanner.classList.add('alert-enter', 'alert-enter-active');
+
+            setTimeout(() => {
+                alertBanner.classList.remove('alert-enter-active');
+                alertBanner.classList.add('alert-exit', 'alert-exit-active');
+                setTimeout(() => { 
+                    alertBanner.classList.add('hidden');
+                    alertBanner.classList.remove('alert-exit', 'alert-exit-active');
+                }, 300);
+            }, 8000); 
+        }
+
+        function triggerWatch(system, calculatedDuration, avgPressureForShaping, stormExtent, watchConfig) {
+            if (Tone.context.state !== 'running') {
+                Tone.start();
+            }
+            synth.triggerAttackRelease(watchConfig.soundNote, "8n");
+
+            const points = [];
+            points.push({ x: stormExtent.minX * cellSize, y: stormExtent.minY * cellSize });
+            points.push({ x: (stormExtent.maxX + 1) * cellSize, y: stormExtent.minY * cellSize });
+            points.push({ x: (stormExtent.maxX + 1) * cellSize, y: (stormExtent.maxY + 1) * cellSize });
+            points.push({ x: stormExtent.minX * cellSize, y: (stormExtent.maxY + 1) * cellSize });
+
+            const jitterScale = 0.5 * (1 - avgPressureForShaping);
+            for (let i = 0; i < points.length; i++) {
+                points[i].x += (Math.random() - 0.5) * cellSize * jitterScale;
+                points[i].y += (Math.random() - 0.5) * cellSize * jitterScale;
+            }
+            
+            activeWatches.push({ 
+                id: system.id, 
+                polygon: points, 
+                endTime: Date.now() + calculatedDuration * 1000, 
+                type: 'watch', 
+                animationPhase: 0, 
+                duration: calculatedDuration, 
+                extent: stormExtent,
+                fillColor: watchConfig.fillColor, 
+                borderColor: watchConfig.borderColor, 
+                lineWidth: watchConfig.lineWidth, 
+                lineDash: watchConfig.lineDash 
+            }); 
+
+            watchTitle.textContent = watchConfig.title;
+            watchMessage.textContent = watchConfig.message;
+            watchBanner.classList.remove('hidden');
+            watchBanner.classList.add('alert-enter', 'alert-enter-active');
+
+            setTimeout(() => {
+                watchBanner.classList.remove('alert-enter-active');
+                watchBanner.classList.add('alert-exit', 'alert-exit-active');
+                setTimeout(() => { 
+                    alertBanner.classList.add('hidden');
+                    alertBanner.classList.remove('alert-exit', 'alert-exit-active');
+                }, 300);
+            }, 5000); 
+        }
+
+        function getColorForDbz(dbz) {
+            for (let i = DBZ_SCALE.length - 1; i >= 0; i--) if (dbz >= DBZ_SCALE[i].dbz) return DBZ_SCALE[i].color;
+            return null;
+        }
+
+        function drawPressureOverlay(ctx) {
+            ctx.globalAlpha = 0.3;
+            const scaledCellSize = cellSize / zoomLevel; 
+
+            for (let r = 0; r < GRID_RESOLUTION; r++) {
+                for (let c = 0; c < GRID_RESOLUTION; c++) {
+                    const pressureValue = getGlobalPressureValue(c, r);
+                    const color = getColorForPressure(pressureValue);
+                    ctx.fillStyle = color;
+                    ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize); 
+                }
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        function getCanvasCoords(clientX, clientY) {
+            const rect = weatherCanvas.getBoundingClientRect();
+            const canvasX = (clientX - rect.left - mapOffsetX) / zoomLevel;
+            const canvasY = (clientY - rect.top - mapOffsetY) / zoomLevel;
+            return { x: canvasX, y: canvasY };
+        }
+
+        function drawPixelData() {
+            weatherCtx.clearRect(0, 0, radarWidth, radarHeight);
+
+            weatherCtx.save();
+            weatherCtx.translate(mapOffsetX, mapOffsetY);
+            weatherCtx.scale(zoomLevel, zoomLevel);
+
+            if (showPressureOverlay) {
+                drawPressureOverlay(weatherCtx); 
+            }
+
+            for (let r = 0; r < GRID_RESOLUTION; r++) {
+                for (let c = 0; c < GRID_RESOLUTION; c++) {
+                    const dbz = radarGrid[r][c];
+                    if (dbz > 0 || dbz > -10) {
+                        const color = getColorForDbz(dbz);
+                        if (color) {
+                            weatherCtx.globalAlpha = 0.8;
+                            weatherCtx.fillStyle = color;
+                            weatherCtx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+                        }
+                    }
+                }
+            }
+            weatherCtx.globalAlpha = 1.0;
+
+            activeWarnings.forEach(warning => {
+                if (!Array.isArray(warning.polygon) || warning.polygon.length === 0) {
+                    return; 
+                }
+                warning.animationPhase = (warning.animationPhase + 0.05) % (Math.PI * 2); 
+                const alpha = 0.2 + Math.abs(Math.sin(warning.animationPhase)) * 0.4; 
+
+                weatherCtx.beginPath();
+                weatherCtx.moveTo(warning.polygon[0].x, warning.polygon[0].y);
+                for (let i = 1; i < warning.polygon.length; i++) {
+                    if (typeof warning.polygon[i].x !== 'number' || typeof warning.polygon[i].y !== 'number' || isNaN(warning.polygon[i].x) || isNaN(warning.polygon[i].y)) {
+                        console.error("Invalid point in warning polygon:", warning.polygon[i]);
+                        continue; 
+                    }
+                    weatherCtx.lineTo(warning.polygon[i].x, warning.polygon[i].y);
+                }
+                weatherCtx.closePath();
+
+                weatherCtx.strokeStyle = `${warning.borderColor}${alpha * 1.5})`; 
+                weatherCtx.fillStyle = `${warning.fillColor}${alpha})`;
+                weatherCtx.lineWidth = warning.lineWidth / zoomLevel;
+                weatherCtx.setLineDash(warning.lineDash);
+                weatherCtx.stroke();
+                weatherCtx.fill();
+                weatherCtx.setLineDash([]);
+            });
+
+            activeWatches.forEach(watch => {
+                if (!Array.isArray(watch.polygon) || watch.polygon.length === 0) {
+                    return; 
+                }
+                watch.animationPhase = (watch.animationPhase + 0.03) % (Math.PI * 2); 
+                const alpha = 0.1 + Math.abs(Math.sin(watch.animationPhase)) * 0.2; 
+
+                weatherCtx.beginPath();
+                weatherCtx.moveTo(watch.polygon[0].x, watch.polygon[0].y);
+                for (let i = 1; i < watch.polygon.length; i++) {
+                    if (typeof watch.polygon[i].x !== 'number' || typeof watch.polygon[i].y !== 'number' || isNaN(watch.polygon[i].x) || isNaN(watch.polygon[i].y)) {
+                        console.error("Invalid point in watch polygon:", watch.polygon[i]);
+                        continue; 
+                    }
+                    weatherCtx.lineTo(watch.polygon[i].x, watch.polygon[i].y);
+                }
+                weatherCtx.closePath();
+                weatherCtx.strokeStyle = `${watch.borderColor}${alpha * 1.5})`; 
+                weatherCtx.fillStyle = `${watch.fillColor}${alpha})`; 
+                weatherCtx.lineWidth = watch.lineWidth / zoomLevel;
+                weatherCtx.setLineDash(watch.lineDash);
+                weatherCtx.stroke();
+                weatherCtx.fill();
+                weatherCtx.setLineDash([]);
+            });
+
+            [...activeWarnings, ...activeWatches].forEach(alert => {
+                if (!Array.isArray(alert.polygon) || alert.polygon.length === 0) {
+                    return; 
+                }
+                const system = weatherSystems.find(s => s.id === alert.id);
+                if (system && system.noiseParams) {
+                    const driftX = system.noiseParams.driftX;
+                    const driftY = system.noiseParams.driftY;
+
+                    const currentMinX = Math.min(...alert.polygon.map(p => p.x));
+                    const currentMaxX = Math.max(...alert.polygon.map(p => p.x));
+                    const currentMinY = Math.min(...alert.polygon.map(p => p.y));
+                    const currentMaxY = Math.max(...alert.polygon.map(p => p.y));
+
+                    const avgX = (currentMinX + currentMaxX) / 2;
+                    const avgY = (currentMinY + currentMaxY) / 2;
+
+                    const angle = Math.atan2(driftY, driftX); 
+
+                    let currentArrowColor;
+                    if (alert.type === 'warning' && alert.warningType === ALERT_TYPES.TORNADO_WARNING_CONFIRMED.title) { // Changed to use ALERT_TYPES.TORNADO_WARNING_CONFIRMED.title
+                        currentArrowColor = '#000000';
+                    } else if (alert.type === 'warning') {
+                        currentArrowColor = '#FFFF00';
+                    } else if (alert.type === 'watch') {
+                        currentArrowColor = '#FFA500'; 
+                    } else {
+                        currentArrowColor = '#E0E7FF'; 
+                    }
+                    
+                    const arrowLength = cellSize * 5; 
+                    const headLength = cellSize * 1.5;
+                    const headWidth = cellSize * 1;    
+                    const trailLength = cellSize * 2;  
+                    const trailOpacity = 0.3;          
+
+                    weatherCtx.save();
+                    weatherCtx.translate(avgX, avgY); 
+                    weatherCtx.rotate(angle); 
+
+                    weatherCtx.beginPath();
+                    weatherCtx.strokeStyle = currentArrowColor;
+                    weatherCtx.lineWidth = 2 / zoomLevel;
+                    weatherCtx.globalAlpha = trailOpacity;
+                    weatherCtx.moveTo(-trailLength, 0); 
+                    weatherCtx.lineTo(0, 0);
+                    weatherCtx.stroke();
+                    weatherCtx.globalAlpha = 1.0; 
+
+                    weatherCtx.beginPath();
+                    weatherCtx.strokeStyle = currentArrowColor;
+                    weatherCtx.fillStyle = currentArrowColor;
+                    weatherCtx.lineWidth = 4 / zoomLevel;
+
+                    weatherCtx.moveTo(0, 0);
+                    weatherCtx.lineTo(arrowLength, 0);
+                    weatherCtx.stroke();
+
+                    // Corrected arrowhead drawing: use headLength, and draw symmetrically
+                    weatherCtx.moveTo(arrowLength, 0);
+                    weatherCtx.lineTo(arrowLength - headLength, headWidth / 2);
+                    weatherCtx.lineTo(arrowLength - headLength, -headWidth / 2);
+                    weatherCtx.closePath();
+                    weatherCtx.fill();
+
+                    weatherCtx.restore();
+                }
+            });
+
+            // Draw user-generated alerts
+            userAlerts.forEach(alert => {
+                weatherCtx.beginPath();
+                weatherCtx.moveTo(alert.polygon[0].x, alert.polygon[0].y);
+                for (let i = 1; i < alert.polygon.length; i++) {
+                    weatherCtx.lineTo(alert.polygon[i].x, alert.polygon[i].y);
+                }
+                weatherCtx.closePath();
+                weatherCtx.strokeStyle = alert.borderColor;
+                weatherCtx.fillStyle = alert.fillColor;
+                weatherCtx.lineWidth = alert.lineWidth / zoomLevel;
+                weatherCtx.setLineDash(alert.lineDash);
+                weatherCtx.stroke();
+                weatherCtx.fill();
+                weatherCtx.setLineDash([]);
+            });
+
+            // Draw user-generated watches - NEW ADDITION
+            userWatches.forEach(watch => {
+                weatherCtx.beginPath();
+                weatherCtx.moveTo(watch.polygon[0].x, watch.polygon[0].y);
+                for (let i = 1; i < watch.polygon.length; i++) {
+                    weatherCtx.lineTo(watch.polygon[i].x, watch.polygon[i].y);
+                }
+                weatherCtx.closePath();
+                weatherCtx.strokeStyle = watch.borderColor;
+                weatherCtx.fillStyle = watch.fillColor;
+                weatherCtx.lineWidth = watch.lineWidth / zoomLevel;
+                weatherCtx.setLineDash(watch.lineDash);
+                weatherCtx.stroke();
+                weatherCtx.fill();
+                weatherCtx.setLineDash([]);
+            });
+
+            // Draw user-generated arrows
+            userArrows.forEach(arrow => {
+                drawArrow(weatherCtx, arrow.startX, arrow.startY, arrow.endX, arrow.endY, arrow.color, arrow.lineWidth / zoomLevel);
+            });
+
+            // Draw temporary polygon for user alerts during drawing mode
+            if ((drawingMode === 'drawing_polygon_severe' || drawingMode === 'drawing_polygon_tornado' || drawingMode === 'drawing_polygon_watch') && currentDrawingPoints.length > 0) { // Added watch drawing mode
+                weatherCtx.beginPath();
+                weatherCtx.moveTo(currentDrawingPoints[0].x, currentDrawingPoints[0].y);
+                for (let i = 1; i < currentDrawingPoints.length; i++) {
+                    weatherCtx.lineTo(currentDrawingPoints[i].x, currentDrawingPoints[i].y);
+                }
+                weatherCtx.lineTo(tempMousePos.x, tempMousePos.y); // Line to current mouse position
+                weatherCtx.closePath(); // Close the path to the first point for preview
+
+                let previewFillColor, previewBorderColor, previewLineDash;
+                if (drawingMode === 'drawing_polygon_severe') {
+                    previewFillColor = 'rgba(255, 255, 100, 0.2)';
+                    previewBorderColor = 'rgba(255, 255, 100, 0.7)';
+                    previewLineDash = [5, 5];
+                } else if (drawingMode === 'drawing_polygon_tornado') { // drawing_polygon_tornado
+                    previewFillColor = 'rgba(255, 100, 100, 0.2)';
+                    previewBorderColor = 'rgba(255, 0, 0, 0.7)';
+                    previewLineDash = [8, 4];
+                } else if (drawingMode === 'drawing_polygon_watch') { // New: Watch preview colors
+                    previewFillColor = 'rgba(255, 165, 0, 0.2)';
+                    previewBorderColor = 'rgba(255, 165, 0, 0.7)';
+                    previewLineDash = [3, 3];
+                }
+                
+                weatherCtx.strokeStyle = previewBorderColor;
+                weatherCtx.fillStyle = previewFillColor;
+                weatherCtx.lineWidth = 2 / zoomLevel;
+                weatherCtx.setLineDash(previewLineDash);
+                weatherCtx.stroke();
+                weatherCtx.fill();
+                weatherCtx.setLineDash([]); // Reset for next drawings
+            }
+            // Draw temporary arrow during drawing mode
+            else if (drawingMode === 'drawing_arrow' && currentDrawingPoints.length === 1) {
+                const startX = currentDrawingPoints[0].x;
+                const startY = currentDrawingPoints[0].y;
+                const endX = tempMousePos.x;
+                const endY = tempMousePos.y;
+                drawArrow(weatherCtx, startX, startY, endX, endY, 'rgba(0, 191, 255, 0.8)', 3 / zoomLevel, true);
+            }
+
+            weatherCtx.restore();
+        }
+
+        /**
+         * Helper function to draw an arrow.
+         * @param {CanvasRenderingContext2D} ctx - The canvas context.
+         * @param {number} fromX - Starting X coordinate.
+         * @param {number} fromY - Starting Y coordinate.
+         * @param {number} toX - Ending X coordinate.
+         * @param {number} toY - Ending Y coordinate.
+         * @param {string} color - Color of the arrow.
+         * @param {number} lineWidth - Line width of the arrow.
+         * @param {boolean} dashed - Whether the arrow should be dashed (for preview).
+         */
+        function drawArrow(ctx, fromX, fromY, toX, toY, color, lineWidth, dashed = false) {
+            const headlen = 10 / zoomLevel;
+            const dx = toX - fromX;
+            const dy = toY - fromY;
+            const angle = Math.atan2(dy, dx);
+
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = lineWidth;
+            if (dashed) {
+                ctx.setLineDash([5, 5]);
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(fromX, fromY);
+            ctx.lineTo(toX, toY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(toX, toY);
+            ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fill();
+
+            if (dashed) {
+                ctx.setLineDash([]);
+            }
+            ctx.restore();
+        }
+
+
+        function buildLegend() {
+            legendContainer.innerHTML = '<div class="font-bold mb-2 text-cyan-300">Reflectivity (dBZ)</div>';
+
+            const gradientBar = document.createElement('div');
+            gradientBar.className = 'w-full h-4 mb-2 rounded-sm';
+            const gradientColors = DBZ_SCALE.map(item => item.color).join(', ');
+            gradientBar.style.background = `linear-gradient(to right, ${gradientColors})`;
+            legendContainer.appendChild(gradientBar);
+
+            DBZ_SCALE.forEach(item => {
+                const legendItem = document.createElement('div');
+                legendItem.className = 'flex items-center w-full mb-1 text-xs';
+                legendItem.innerHTML = `<div class="w-4 h-4 mr-2 border border-slate-600" style="background-color: ${item.color};"></div><span>>${item.dbz} dBZ</span>`; 
+                legendContainer.appendChild(legendItem);
+            });
+        }
+        
+        function animate() {
+            if (!animationPaused) {
+                time += 0.3;
+                pressureAnimationTime += 0.015; 
+                populateRadarGrid(); 
+            }
+            drawPixelData();
+            requestAnimationFrame(animate);
+        }
+
+        function updateTime() { 
+            const currentTimeDisplay = document.getElementById('currentTime');
+            if (currentTimeDisplay) {
+                currentTimeDisplay.textContent = new Date().toLocaleTimeString(); 
+            }
+        }
+        
+        // Function to reset all drawing related states
+        function resetDrawingState() {
+            // Remove all specific drawing mode cursors from radarContainer
+            radarContainer.classList.remove('drawing-alert', 'drawing-arrow', 'drawing-watch', 'deleting-alert'); 
+            // Reset cursor to default 'grab' when not in a special mode
+            radarContainer.style.cursor = 'grab';
+
+            drawingMode = 'none';
+            const alertTypeSelectionModal = document.getElementById('alertTypeSelectionModal');
+            if (alertTypeSelectionModal) {
+                alertTypeSelectionModal.classList.remove('show');
+            }
+            const doneDrawingButton = document.getElementById('doneDrawingButton');
+            if (doneDrawingButton) {
+                doneDrawingButton.classList.add('hidden');
+            }
+            currentDrawingPoints = [];
+            selectedUserAlertType = '';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const currentTimeDisplayElement = document.getElementById('currentTime');
+            const refreshScanButton = document.getElementById('refreshScan');
+            const toggleAnimationButton = document.getElementById('toggleAnimation');
+            const togglePressureMapButton = document.getElementById('togglePressureMap');
+            const drawAlertButton = document.getElementById('drawAlertButton');
+            const drawWatchButton = document.getElementById('drawWatchButton'); 
+            const drawArrowButton = document.getElementById('drawArrowButton');
+            const deleteAlertButton = document.getElementById('deleteAlertButton'); 
+            const doneDrawingButton = document.getElementById('doneDrawingButton');
+            const alertTypeSelectionModal = document.getElementById('alertTypeSelectionModal');
+            const severeTstormAlertButton = document.getElementById('severeTstormAlertButton');
+            const tornadoAlertButton = document.getElementById('tornadoAlertButton');
+            const outlooksButton = document.getElementById('outlooksButton');
+            const outlooksModal = document.getElementById('outlooksModal');
+            const closeOutlooksModal = document.getElementById('closeOutlooksModal');
+            const alertBanner = document.getElementById('alertBanner');
+            const alertTitle = document.getElementById('alertTitle');
+            const alertMessage = document.getElementById('alertMessage');
+            const watchBanner = document.getElementById('watchBanner');
+            const watchTitle = document.getElementById('watchTitle');
+            const watchMessage = document.getElementById('watchMessage');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const legendContainer = document.getElementById('legendContainer');
+
+
+            loadingOverlay.classList.remove('hidden');
+            initPerlin(); 
+            buildLegend();
+            resizeCanvas();
+            updateTime();
+            setInterval(updateTime, 1000); 
+            
+            if (refreshScanButton) {
+                refreshScanButton.addEventListener('click', () => {
+                    loadingOverlay.classList.remove('hidden');
+                    time = 0;
+                    mapOffsetX = 0;
+                    mapOffsetY = 0;
+                    zoomLevel = 1.0;
+                    pressureAnimationTime = 0;
+                    
+                    initWeatherSystems();
+                    userAlerts = [];
+                    userWatches = []; 
+                    userArrows = [];
+                    resetDrawingState();
+
+                    drawBaseMapAndDynamicBackground();
+
+                    setTimeout(() => {
+                        loadingOverlay.classList.add('hidden');
+                        drawPixelData();
+                    }, 500);
+                });
+            }
+
+            if (toggleAnimationButton) {
+                toggleAnimationButton.addEventListener('click', () => {
+                    animationPaused = !animationPaused;
+                    toggleAnimationButton.textContent = animationPaused ? 'Resume' : 'Pause';
+                    if (Tone.context.state !== 'running') {
+                        Tone.start();
+                    }
+                    if (!animationPaused) { requestAnimationFrame(animate); }
+                });
+            }
+
+            if (togglePressureMapButton) {
+                togglePressureMapButton.addEventListener('click', () => {
+                    showPressureOverlay = !showPressureOverlay;
+                    togglePressureMapButton.textContent = showPressureOverlay ? 'Hide Pressure' : 'Pressure Map';
+                    drawPixelData();
+                });
+            }
+
+            if (drawAlertButton) {
+                drawAlertButton.addEventListener('click', () => {
+                    resetDrawingState();
+                    drawingMode = 'selecting_alert_type';
+                    if (alertTypeSelectionModal) {
+                        alertTypeSelectionModal.classList.add('show');
+                    }
+                });
+            }
+
+            if (severeTstormAlertButton) {
+                severeTstormAlertButton.addEventListener('click', () => {
+                    selectedUserAlertType = 'severe_tstorm';
+                    drawingMode = 'drawing_polygon_severe';
+                    if (alertTypeSelectionModal) {
+                        alertTypeSelectionModal.classList.remove('show');
+                    }
+                    radarContainer.classList.add('drawing-alert');
+                    radarContainer.style.cursor = 'crosshair'; 
+                    if (doneDrawingButton) {
+                        doneDrawingButton.classList.remove('hidden');
+                    }
+                });
+            }
+
+            if (tornadoAlertButton) {
+                tornadoAlertButton.addEventListener('click', () => {
+                    selectedUserAlertType = 'tornado';
+                    drawingMode = 'drawing_polygon_tornado';
+                    if (alertTypeSelectionModal) {
+                        alertTypeSelectionModal.classList.remove('show');
+                    }
+                    radarContainer.classList.add('drawing-alert');
+                    radarContainer.style.cursor = 'crosshair'; 
+                    if (doneDrawingButton) {
+                        doneDrawingButton.classList.remove('hidden');
+                    }
+                });
+            }
+
+            // New: Draw Watch Button Listener
+            if (drawWatchButton) {
+                drawWatchButton.addEventListener('click', () => {
+                    resetDrawingState();
+                    drawingMode = 'drawing_polygon_watch';
+                    radarContainer.classList.add('drawing-watch');
+                    radarContainer.style.cursor = 'crosshair';
+                    if (doneDrawingButton) {
+                        doneDrawingButton.classList.remove('hidden');
+                    }
+                });
+            }
+
+            if (drawArrowButton) {
+                drawArrowButton.addEventListener('click', () => {
+                    resetDrawingState();
+                    drawingMode = 'drawing_arrow';
+                    radarContainer.classList.add('drawing-arrow');
+                    radarContainer.style.cursor = 'crosshair'; 
+                    if (doneDrawingButton) {
+                        doneDrawingButton.classList.remove('hidden');
+                    }
+                });
+            }
+
+            // New: Delete Alert Button Listener
+            if (deleteAlertButton) {
+                deleteAlertButton.addEventListener('click', () => {
+                    resetDrawingState(); 
+                    drawingMode = 'delete_alert';
+                    radarContainer.classList.add('deleting-alert');
+                    radarContainer.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'><path fill=\'red\' d=\'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z\'/></svg>") 12 12, pointer'; 
+                    if (doneDrawingButton) {
+                        doneDrawingButton.classList.remove('hidden');
+                    }
+                });
+            }
+
+            if (doneDrawingButton) {
+                doneDrawingButton.addEventListener('click', () => {
+                    // Logic for finishing drawing polygons/arrows
+                    if ((drawingMode === 'drawing_polygon_severe' || drawingMode === 'drawing_polygon_tornado') && currentDrawingPoints.length >= 3) {
+                        let fillColor, borderColor, lineDash;
+                        if (selectedUserAlertType === 'severe_tstorm') {
+                            fillColor = 'rgba(255, 255, 100, 0.3)';
+                            borderColor = 'rgba(255, 255, 100, 1)';
+                            lineDash = [];
+                        } else {
+                            fillColor = 'rgba(255, 100, 100, 0.3)';
+                            borderColor = 'rgba(255, 0, 0, 1)';
+                            lineDash = [8, 4];
+                        }
+
+                        userAlerts.push({
+                            id: `user_alert_${Date.now()}`,
+                            polygon: [...currentDrawingPoints],
+                            fillColor: fillColor,
+                            borderColor: borderColor,
+                            lineWidth: 3,
+                            lineDash: lineDash
+                        });
+                    } else if (drawingMode === 'drawing_polygon_watch' && currentDrawingPoints.length >= 3) { 
+                        userWatches.push({
+                            id: `user_watch_${Date.now()}`,
+                            polygon: [...currentDrawingPoints],
+                            fillColor: 'rgba(255, 165, 0, 0.3)', 
+                            borderColor: 'rgba(255, 165, 0, 1)',
+                            lineWidth: 3,
+                            lineDash: [3, 3] 
+                        });
+                    } else if (drawingMode === 'drawing_arrow' && currentDrawingPoints.length === 2) {
+                        userArrows.push({
+                            id: `user_arrow_${Date.now()}`,
+                            startX: currentDrawingPoints[0].x,
+                            startY: currentDrawingPoints[0].y,
+                            endX: currentDrawingPoints[1].x,
+                            endY: currentDrawingPoints[1].y,
+                            color: 'rgba(0, 191, 255, 1)',
+                            lineWidth: 3
+                        });
+                    }
+                    resetDrawingState(); 
+                    drawPixelData();
+                });
+            }
+
+            if (outlooksButton) {
+                outlooksButton.addEventListener('click', () => {
+                    if (outlooksModal) {
+                        outlooksModal.classList.add('show');
+                    }
+                });
+            }
+
+            if (closeOutlooksModal) {
+                closeOutlooksModal.addEventListener('click', () => {
+                    if (outlooksModal) {
+                        outlooksModal.classList.remove('show');
+                    }
+                });
+            }
+
+            if (outlooksModal) {
+                outlooksModal.addEventListener('click', (e) => {
+                    if (e.target === outlooksModal) {
+                        outlooksModal.classList.remove('show');
+                    }
+                });
+            }
+
+            radarContainer.addEventListener('mousedown', (e) => {
+                // Only pan if not in drawing or deleting mode
+                if (drawingMode === 'none') {
+                    isDragging = true;
+                    radarContainer.classList.add('dragging');
+                    // Store original cursor style to restore it later
+                    radarContainer.dataset.originalCursor = radarContainer.style.cursor;
+                    radarContainer.style.cursor = 'grabbing';
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                tempMousePos = getCanvasCoords(e.clientX, e.clientY);
+
+                if (isDragging) {
+                    const dx = e.clientX - lastMouseX;
+                    const dy = e.clientY - lastMouseY;
+                    
+                    mapOffsetX += dx / zoomLevel; 
+                    mapOffsetY += dy / zoomLevel;
+
+                    const maxPanX = radarWidth * (zoomLevel - 1 + PAN_LIMIT_FACTOR);
+                    const maxPanY = radarHeight * (zoomLevel - 1 + PAN_LIMIT_FACTOR);
+                    mapOffsetX = Math.max(-maxPanX, Math.min(maxPanX, mapOffsetX));
+                    mapOffsetY = Math.max(-maxPanY, Math.min(maxPanY, mapOffsetY));
+
+                    drawBaseMapAndDynamicBackground(); 
+                    drawPixelData(); 
+                    lastMouseX = e.clientX;
+                    lastMouseY = e.clientY;
+                } else if (drawingMode.startsWith('drawing_') && drawingMode !== 'delete_alert') { 
+                    drawPixelData();
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+                radarContainer.classList.remove('dragging');
+                // Restore original cursor if it was set during mousedown, otherwise default to grab
+                radarContainer.style.cursor = radarContainer.dataset.originalCursor || 'grab';
+                delete radarContainer.dataset.originalCursor; 
+            });
+            
+            // Handle clicks for drawing and deleting modes on canvas
+            weatherCanvas.addEventListener('click', (e) => {
+                const canvasCoords = getCanvasCoords(e.clientX, e.clientY);
+
+                if (drawingMode.startsWith('drawing_polygon_')) {
+                    currentDrawingPoints.push(canvasCoords);
+                    drawPixelData();
+                } else if (drawingMode === 'drawing_arrow') {
+                    currentDrawingPoints.push(canvasCoords);
+                    if (currentDrawingPoints.length === 2) {
+                        drawPixelData();
+                    }
+                } else if (drawingMode === 'delete_alert') {
+                    let deleted = false;
+                    // Check user alerts (polygons)
+                    for (let i = userAlerts.length - 1; i >= 0; i--) {
+                        const alert = userAlerts[i];
+                        weatherCtx.save();
+                        weatherCtx.beginPath();
+                        weatherCtx.moveTo(alert.polygon[0].x, alert.polygon[0].y);
+                        for (let j = 1; j < alert.polygon.length; j++) {
+                            weatherCtx.lineTo(alert.polygon[j].x, alert.polygon[j].y);
+                        }
+                        weatherCtx.closePath();
+                        // isPointInPath works with the current context transformation
+                        // so canvasCoords already accounts for pan/zoom
+                        if (weatherCtx.isPointInPath(canvasCoords.x, canvasCoords.y)) {
+                            userAlerts.splice(i, 1);
+                            deleted = true;
+                            break; // Delete only one alert per click
+                        }
+                        weatherCtx.restore();
+                    }
+
+                    // Check user watches (polygons) 
+                    if (!deleted) { 
+                        for (let i = userWatches.length - 1; i >= 0; i--) {
+                            const watch = userWatches[i];
+                            weatherCtx.save();
+                            weatherCtx.beginPath();
+                            weatherCtx.moveTo(watch.polygon[0].x, watch.polygon[0].y);
+                            for (let j = 1; j < watch.polygon.length; j++) {
+                                weatherCtx.lineTo(watch.polygon[j].x, watch.polygon[j].y);
+                            }
+                            weatherCtx.closePath();
+                            if (weatherCtx.isPointInPath(canvasCoords.x, canvasCoords.y)) {
+                                userWatches.splice(i, 1);
+                                deleted = true;
+                                break;
+                            }
+                            weatherCtx.restore();
+                        }
+                    }
+
+                    // Check user arrows (simple bounding box/distance check for lines)
+                    if (!deleted) {
+                        for (let i = userArrows.length - 1; i >= 0; i--) {
+                            const arrow = userArrows[i];
+                            // Simple bounding box check for arrows (more complex is point-line distance)
+                            const minX = Math.min(arrow.startX, arrow.endX);
+                            const maxX = Math.max(arrow.startX, arrow.endX);
+                            const minY = Math.min(arrow.startY, arrow.endY);
+                            const maxY = Math.max(arrow.startY, arrow.endY);
+                            
+                            // Add a small buffer for easier clicking
+                            const buffer = 10 / zoomLevel; 
+
+                            if (canvasCoords.x >= minX - buffer && canvasCoords.x <= maxX + buffer &&
+                                canvasCoords.y >= minY - buffer && canvasCoords.y <= maxY + buffer) {
+                                userArrows.splice(i, 1);
+                                deleted = true;
+                                break; 
+                            }
+                        }
+                    }
+
+                    if (deleted) {
+                        drawPixelData(); // Redraw if something was deleted
+                    }
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && drawingMode !== 'none') {
+                    resetDrawingState();
+                    drawPixelData();
+                }
+            });
+            
+            radarContainer.addEventListener('wheel', (e) => {
+                e.preventDefault();
+
+                const scaleFactor = e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
+                const oldZoom = zoomLevel;
+                zoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomLevel * scaleFactor));
+
+                const rect = radarContainer.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                mapOffsetX = mouseX - (mouseX - mapOffsetX) * (zoomLevel / oldZoom);
+                mapOffsetY = mouseY - (mouseY - mapOffsetY) * (zoomLevel / oldZoom);
+
+                const maxPanX = radarWidth * (zoomLevel - 1 + PAN_LIMIT_FACTOR);
+                const maxPanY = radarHeight * (zoomLevel - 1 + PAN_LIMIT_FACTOR);
+                mapOffsetX = Math.max(-maxPanX, Math.min(maxPanX, mapOffsetX));
+                mapOffsetY = Math.max(-maxPanY, Math.min(maxPanY, mapOffsetY));
+
+                drawBaseMapAndDynamicBackground();
+                drawPixelData();
+            });
+
+            window.addEventListener('resize', resizeCanvas);
+
+            requestAnimationFrame(animate); 
+        });
+    </script>
+</body>
+</html>
